@@ -19,9 +19,14 @@ def main():
     output_file = os.path.splitext(input_file)[0] + "_OUTPUT.xlsx"
     print(f"Processing file: {input_file}")
 
-    # Load the workbook and read the data
-    print("Loading workbook and reading data...")
+    # Load the workbook and save it as the output file
+    print("Loading workbook and saving initial structure...")
     book = load_workbook(input_file)
+    book.save(output_file)
+
+    # Re-load the output file for adding a new sheet
+    print("Re-loading saved workbook...")
+    book = load_workbook(output_file)
     data = pd.read_excel(input_file, skiprows=2)
 
     # Remove rows without dates and filter relevant data
@@ -51,16 +56,15 @@ def main():
         lambda x: f"{int(abs(x) // 60)}:{int(abs(x) % 60):02}" if pd.notnull(x) else None
     )
 
-    # Add deviation analysis to a new sheet
+    # Write deviation analysis to a new sheet
     print("Writing deviation analysis to a new sheet...")
     with pd.ExcelWriter(output_file, engine='openpyxl', mode='a') as writer:
-        writer.book = book
-        writer.sheets = {ws.title: ws for ws in book.worksheets}
+        writer.book = book  # Use the reloaded workbook
         switch_data[['Datetime', 'State', 'Decimal_Deviation', 'Deviation_Min_Sec']].to_excel(
             writer, sheet_name='Deviation Analysis', index=False
         )
 
-    # Apply conditional formatting in the new sheet
+    # Apply conditional formatting to the new sheet
     print("Applying conditional formatting...")
     deviation_analysis_sheet = book['Deviation Analysis']
     
@@ -80,7 +84,6 @@ def main():
     )
 
     # Save the workbook with updated sheet and formatting
-    print("Saving the workbook with updated deviation analysis and formatting...")
     book.save(output_file)
     print(f"Processing complete. Output saved to {output_file}")
 
