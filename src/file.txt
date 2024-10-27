@@ -1,0 +1,169 @@
+FILE CONVERSION
+Run in bash
+pip install pandas openpyxl
+
+Convert csv to xcel
+import pandas as pd
+import os
+
+# Define the folder containing CSV files
+csv_folder = 'path/to/your/csv_folder'
+output_folder = 'path/to/output_folder'
+
+# Ensure the output folder exists
+os.makedirs(output_folder, exist_ok=True)
+
+# Loop through each CSV file in the folder
+for filename in os.listdir(csv_folder):
+    if filename.endswith('.csv'):
+        csv_path = os.path.join(csv_folder, filename)
+        excel_path = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}.xlsx")
+
+        # Read CSV and save as Excel
+        df = pd.read_csv(csv_path)
+        df.to_excel(excel_path, index=False)
+
+        print(f"Converted {filename} to Excel format")
+
+FILE ADJUSTMENT
+How to run in bash
+python batch_process_deviation_analysis.py
+
+non wifi python script
+import os
+import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
+from openpyxl.formatting.rule import CellIsRule
+
+# Define input and output folder paths
+input_folder = 'path/to/your/input_folder'
+output_folder = 'path/to/your/output_folder'
+
+# Ensure the output folder exists
+os.makedirs(output_folder, exist_ok=True)
+
+# Loop through each Excel file in the input folder
+for filename in os.listdir(input_folder):
+    if filename.endswith('.xlsx'):
+        file_path = os.path.join(input_folder, filename)
+        output_file_path = os.path.join(output_folder, f"Updated_{filename}")
+
+        # Load the workbook and read the data
+        book = load_workbook(file_path)
+        data = pd.read_excel(file_path, skiprows=2)
+
+        # Remove rows without dates and filter relevant data
+        data.columns = ['Date', 'Time', 'SupplyTemp', 'ReturnTemp', 'Mode', 'Request', 'State', 'Status']
+        data = data[data['Date'].str.match(r'^\d{2}/\d{2}/\d{4}$', na=False)].copy()
+        data.reset_index(drop=True, inplace=True)
+
+        # Filter rows for "testing" and switching states
+        testing_data = data[data['Status'].str.lower() == 'testing'].copy()
+        testing_data['Switch'] = testing_data['State'].ne(testing_data['State'].shift()).astype(int)
+        switch_data = testing_data[testing_data['Switch'] == 1].copy()
+
+        # Calculate the time deviation in both decimal hours and mm:ss format
+        switch_data['Datetime'] = pd.to_datetime(switch_data['Date'] + ' ' + switch_data['Time'], dayfirst=True, errors='coerce')
+        switch_data.dropna(subset=['Datetime'], inplace=True)
+        switch_data['Time_Diff'] = switch_data['Datetime'].diff().dt.total_seconds() / 3600  # in hours
+        switch_data['Decimal_Deviation'] = switch_data['Time_Diff'] - 2  # 2 hours as baseline
+
+        # Convert deviation in hours to mm:ss format for clarity
+        switch_data['Deviation_Min_Sec'] = (switch_data['Decimal_Deviation'] * 3600).apply(
+            lambda x: f"{int(abs(x) // 60)}:{int(abs(x) % 60):02}" if pd.notnull(x) else None
+        )
+
+        # Add deviation analysis to a new sheet
+        with pd.ExcelWriter(output_file_path, engine='openpyxl', mode='a') as writer:
+            writer.book = book
+            writer.sheets = {ws.title: ws for ws in book.worksheets}
+            switch_data[['Datetime', 'State', 'Decimal_Deviation', 'Deviation_Min_Sec']].to_excel(
+                writer, sheet_name='Deviation Analysis', index=False
+            )
+
+        # Apply conditional formatting in the new sheet
+        deviation_analysis_sheet = book['Deviation Analysis']
+        
+        yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+        red_fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
+
+        # Yellow: for deviations over 2 minutes (0.0333 hours) but less than 5 minutes (0.0833 hours)
+        deviation_analysis_sheet.conditional_formatting.add(
+            'C2:C1000',
+            CellIsRule(operator='between', formula=['0.0333', '0.0833'], fill=yellow_fill)
+        )
+
+        # Red: for deviations over 5 minutes (0.0833 hours)
+        deviation_analysis_sheet.conditional_formatting.add(
+            'C2:C1000',
+            CellIsRule(operator='greaterThan', formula=['0.0833'], fill=red_fill)
+        )
+
+        # Save the workbook with updated sheet and formatting
+        book.save(output_file_path)
+        print(f"Processed and saved {filename} with deviation analysis and formatting.")
+
+
+wifi script
+import os
+import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
+from openpyxl.formatting.rule import CellIsRule
+from openpyxl.utils.dataframe import dataframe_to_rows
+
+# Define the path to the input and output files
+input_file = 'path/to/your/input_file.xlsx'  # Original file
+output_file = 'path/to/your/output_file_with_analysis.xlsx'  # Final output file
+
+# Load the workbook and read the data, skipping any metadata rows if needed
+book = load_workbook(input_file)
+data = pd.read_excel(input_file, skiprows=2)
+
+# Adjust column names based on the file structure, as observed
+data.columns = ['DateTime', 'SupplyTemp', 'ReturnTemp', 'Mode', 'Request', 'State', 'Status']
+
+# Split 'DateTime' into separate 'Date' and 'Time' columns
+data[['Date', 'Time']] = data['DateTime'].astype(str).str.split(' ', expand=True)
+data.drop(columns=['DateTime'], inplace=True)
+
+# Filter rows where Status is "Test Run" or similar
+testing_data = data[data['Status'].str.contains('Test', na=False, case=False)].copy()
+testing_data['Switch'] = testing_data['State'].ne(testing_data['State'].shift()).astype(int)
+switch_data = testing_data[testing_data['Switch'] == 1].copy()
+
+# Calculate deviations in decimal hours and mm:ss format
+switch_data['Datetime'] = pd.to_datetime(switch_data['Date'] + ' ' + switch_data['Time'], dayfirst=True, errors='coerce')
+switch_data.dropna(subset=['Datetime'], inplace=True)
+switch_data['Time_Diff'] = switch_data['Datetime'].diff().dt.total_seconds() / 3600  # time difference in hours
+switch_data['Decimal_Deviation'] = switch_data['Time_Diff'] - 2  # deviation from a 2-hour baseline
+switch_data['Deviation_Min_Sec'] = (switch_data['Decimal_Deviation'] * 3600).apply(
+    lambda x: f"{int(abs(x) // 60)}:{int(abs(x) % 60):02}" if pd.notnull(x) else None
+)
+
+# Create a new sheet in the original workbook for the deviation analysis
+deviation_analysis_sheet = book.create_sheet(title="Deviation Analysis")
+
+# Write the analysis data to the new sheet
+for r_idx, row in enumerate(dataframe_to_rows(switch_data[['Datetime', 'State', 'Decimal_Deviation', 'Deviation_Min_Sec']], index=False, header=True), 1):
+    for c_idx, value in enumerate(row, 1):
+        deviation_analysis_sheet.cell(row=r_idx, column=c_idx, value=value)
+
+# Define fills for conditional formatting
+yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+red_fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
+
+# Apply conditional formatting: yellow for deviations between 2 and 5 minutes, red for over 5 minutes
+deviation_analysis_sheet.conditional_formatting.add(
+    'C2:C1000',
+    CellIsRule(operator='between', formula=['0.0333', '0.0833'], fill=yellow_fill)
+)
+deviation_analysis_sheet.conditional_formatting.add(
+    'C2:C1000',
+    CellIsRule(operator='greaterThan', formula=['0.0833'], fill=red_fill)
+)
+
+# Save the workbook with the new sheet and formatting
+book.save(output_file)
+print(f"Processed and saved analysis as a new sheet in {output_file}")
