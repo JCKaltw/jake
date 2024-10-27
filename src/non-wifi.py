@@ -17,23 +17,31 @@ def main():
 
     # Define output file path
     output_file = os.path.splitext(input_file)[0] + "_OUTPUT.xlsx"
+    print(f"Processing file: {input_file}")
 
     # Load the workbook and read the data
+    print("Loading workbook and reading data...")
     book = load_workbook(input_file)
     data = pd.read_excel(input_file, skiprows=2)
 
     # Remove rows without dates and filter relevant data
+    print("Cleaning data and filtering relevant rows...")
     data.columns = ['Date', 'Time', 'SupplyTemp', 'ReturnTemp', 'Mode', 'Request', 'State', 'Status']
     data = data[data['Date'].str.match(r'^\d{2}/\d{2}/\d{4}$', na=False)].copy()
     data.reset_index(drop=True, inplace=True)
 
     # Filter rows for "testing" and switching states
+    print("Filtering for 'testing' rows and identifying state switches...")
     testing_data = data[data['Status'].str.lower() == 'testing'].copy()
     testing_data['Switch'] = testing_data['State'].ne(testing_data['State'].shift()).astype(int)
     switch_data = testing_data[testing_data['Switch'] == 1].copy()
 
     # Calculate the time deviation in both decimal hours and mm:ss format
-    switch_data['Datetime'] = pd.to_datetime(switch_data['Date'] + ' ' + switch_data['Time'], dayfirst=True, errors='coerce')
+    print("Calculating time deviations and formatting data...")
+    switch_data['Datetime'] = pd.to_datetime(
+        switch_data['Date'].astype(str) + ' ' + switch_data['Time'].astype(str),
+        dayfirst=True, errors='coerce'
+    )
     switch_data.dropna(subset=['Datetime'], inplace=True)
     switch_data['Time_Diff'] = switch_data['Datetime'].diff().dt.total_seconds() / 3600  # in hours
     switch_data['Decimal_Deviation'] = switch_data['Time_Diff'] - 2  # 2 hours as baseline
@@ -44,6 +52,7 @@ def main():
     )
 
     # Add deviation analysis to a new sheet
+    print("Writing deviation analysis to a new sheet...")
     with pd.ExcelWriter(output_file, engine='openpyxl', mode='a') as writer:
         writer.book = book
         writer.sheets = {ws.title: ws for ws in book.worksheets}
@@ -52,6 +61,7 @@ def main():
         )
 
     # Apply conditional formatting in the new sheet
+    print("Applying conditional formatting...")
     deviation_analysis_sheet = book['Deviation Analysis']
     
     yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
@@ -70,8 +80,9 @@ def main():
     )
 
     # Save the workbook with updated sheet and formatting
+    print("Saving the workbook with updated deviation analysis and formatting...")
     book.save(output_file)
-    print(f"Processed and saved {output_file} with deviation analysis and formatting.")
+    print(f"Processing complete. Output saved to {output_file}")
 
 if __name__ == "__main__":
     main()
